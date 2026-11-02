@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import {
   ChevronDown,
   ChevronUp,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Plus,
   CheckSquare,
   Square,
@@ -275,6 +277,19 @@ export const ExamView: React.FC = () => {
     }));
   };
 
+  const areAllSubjectsExpanded =
+    selectedExam.subjects.length > 0 &&
+    selectedExam.subjects.every((s) => expandedSubjects[s.id] ?? true);
+
+  const toggleAllSubjects = () => {
+    const nextState = !areAllSubjectsExpanded;
+    const nextMap: Record<string, boolean> = {};
+    for (const s of selectedExam.subjects) {
+      nextMap[s.id] = nextState;
+    }
+    setExpandedSubjects(nextMap);
+  };
+
   const handleAddSubject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSubjName.trim()) return;
@@ -309,7 +324,7 @@ export const ExamView: React.FC = () => {
   return (
     <div className="space-y-6 pb-16 lg:pb-8">
       {/* Barra de Topo com botão Voltar para Concursos */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           onClick={() => setSelectedExamId(null)}
           className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#211C2B] hover:bg-[#292336] border border-[#322B40] text-xs font-semibold text-[#F5F2F8] transition"
@@ -318,13 +333,34 @@ export const ExamView: React.FC = () => {
           <span>Voltar para Concursos</span>
         </button>
 
-        <button
-          onClick={() => setIsNewSubjOpen(true)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/25 font-semibold text-xs transition"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Matéria</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {selectedExam.subjects.length > 0 && (
+            <button
+              onClick={toggleAllSubjects}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#211C2B] hover:bg-[#292336] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40] font-semibold text-xs transition"
+            >
+              {areAllSubjectsExpanded ? (
+                <>
+                  <ChevronsDownUp className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Minimizar Todas</span>
+                </>
+              ) : (
+                <>
+                  <ChevronsUpDown className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Expandir Todas</span>
+                </>
+              )}
+            </button>
+          )}
+
+          <button
+            onClick={() => setIsNewSubjOpen(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 text-emerald-300 border border-emerald-400/30 hover:bg-emerald-500/25 font-semibold text-xs transition"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Matéria</span>
+          </button>
+        </div>
       </div>
 
       {/* Painel de Progresso do Concurso Selecionado */}

@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -7,12 +7,6 @@ import {
   Sparkles,
   Cloud,
   HardDrive,
-  Download,
-  Upload,
-  RotateCcw,
-  X,
-  CheckCircle2,
-  FolderSync,
   LogOut,
   Palette,
   Check,
@@ -30,14 +24,7 @@ export const Sidebar: React.FC = () => {
     theme,
     setTheme,
     logout,
-    exportBackup,
-    importBackup,
-    resetToDemoData,
   } = usePlannerStore();
-
-  const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
-  const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const navItems: {
     id: NavigationTab;
@@ -75,20 +62,6 @@ export const Sidebar: React.FC = () => {
       activeClass: 'border-l-4 border-l-emerald-400 bg-emerald-500/15 text-[#F5F2F8]',
     },
   ];
-
-  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      await importBackup(file);
-      setFeedbackMsg('Backup importado!');
-      setTimeout(() => setFeedbackMsg(null), 3000);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Erro ao importar JSON.');
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   return (
     <>
@@ -154,9 +127,8 @@ export const Sidebar: React.FC = () => {
           })}
         </nav>
 
-        {/* Seletor de Tema + Status + Backup */}
+        {/* Seletor de Tema + Status + Sair */}
         <div className="p-3.5 border-t border-[#322B40] space-y-3">
-          {/* Seletor de Temas (Rosa, Verde, Azul, Amarelo, Lavanda, Pêssego) */}
           <div className="p-2.5 rounded-xl bg-[#16131D] border border-[#322B40] space-y-2">
             <div className="flex items-center justify-between text-[11px]">
               <span className="font-semibold text-[#F5F2F8] flex items-center gap-1.5">
@@ -199,7 +171,7 @@ export const Sidebar: React.FC = () => {
               ) : (
                 <HardDrive className="w-3.5 h-3.5 text-purple-300" />
               )}
-              {syncStatus === 'cloud' ? 'Sincronizado' : 'Salvo Localmente'}
+              {syncStatus === 'cloud' ? 'Sincronizado na Nuvem' : 'Salvo Localmente'}
             </span>
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -208,22 +180,13 @@ export const Sidebar: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              onClick={() => setIsBackupModalOpen(true)}
-              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium text-[#A89FBD] hover:text-[#F5F2F8] bg-[#16131D] hover:bg-[#292336] border border-[#322B40] transition"
-            >
-              <FolderSync className="w-3.5 h-3.5 text-pink-300" />
-              <span>Backup</span>
-            </button>
-            <button
-              onClick={logout}
-              className="flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-medium text-[#A89FBD] hover:text-rose-300 bg-[#16131D] hover:bg-[#292336] border border-[#322B40] transition"
-            >
-              <LogOut className="w-3.5 h-3.5 text-rose-300" />
-              <span>Trocar Conta</span>
-            </button>
-          </div>
+          <button
+            onClick={logout}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium text-[#A89FBD] hover:text-rose-300 bg-[#16131D] hover:bg-[#292336] border border-[#322B40] transition"
+          >
+            <LogOut className="w-3.5 h-3.5 text-rose-300" />
+            <span>Trocar Conta / Sair</span>
+          </button>
         </div>
       </aside>
 
@@ -250,15 +213,9 @@ export const Sidebar: React.FC = () => {
             ))}
           </div>
           <button
-            onClick={() => setIsBackupModalOpen(true)}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-[#A89FBD] bg-[#16131D] border border-[#322B40]"
-          >
-            <FolderSync className="w-3.5 h-3.5 text-pink-300" />
-          </button>
-          <button
             onClick={logout}
-            title="Trocar Conta"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs text-rose-300 bg-[#16131D] border border-[#322B40]"
+            title="Trocar Conta / Sair"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs text-rose-300 bg-[#16131D] border border-[#322B40]"
           >
             <LogOut className="w-3.5 h-3.5" />
           </button>
@@ -285,82 +242,6 @@ export const Sidebar: React.FC = () => {
           );
         })}
       </nav>
-
-      {/* Modal enxuto de Backup */}
-      {isBackupModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="bg-[#211C2B] border border-[#322B40] rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-[#F5F2F8]">
-                Sincronização & Backup (JSON)
-              </h3>
-              <button
-                onClick={() => setIsBackupModalOpen(false)}
-                className="p-1 rounded-lg text-[#A89FBD] hover:text-[#F5F2F8]"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {feedbackMsg && (
-              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-xs text-emerald-300">
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>{feedbackMsg}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                onClick={() => {
-                  exportBackup();
-                  setFeedbackMsg('Backup exportado!');
-                }}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-pink-500/15 text-pink-300 hover:bg-pink-500/25 border border-pink-400/30 transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Exportar JSON
-              </button>
-
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-purple-500/15 text-purple-300 hover:bg-purple-500/25 border border-purple-400/30 transition"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Importar JSON
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json,application/json"
-                onChange={handleImportFile}
-                className="hidden"
-              />
-            </div>
-
-            <div className="pt-2 border-t border-[#322B40] flex items-center justify-between">
-              <button
-                onClick={async () => {
-                  if (window.confirm('Restaurar dados de exemplo?')) {
-                    await resetToDemoData();
-                    setFeedbackMsg('Dados restaurados!');
-                  }
-                }}
-                className="inline-flex items-center gap-1 text-xs text-[#A89FBD] hover:text-rose-300 transition"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Restaurar exemplo
-              </button>
-
-              <button
-                onClick={() => setIsBackupModalOpen(false)}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8]"
-              >
-                Fechar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };

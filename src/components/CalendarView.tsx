@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -13,6 +13,7 @@ import {
   X,
   Maximize2,
   Minimize2,
+  Smartphone,
 } from 'lucide-react';
 import { usePlannerStore } from '../store/usePlannerStore';
 import { CalendarEvent, EventCategory, RecurrenceRule } from '../types';
@@ -48,7 +49,14 @@ export const CalendarView: React.FC = () => {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
 
-  // Modal de Compromisso
+  // Modal de Compromissos do Dia (aberto ao segurar o dia no celular/tablet)
+  const [dayDetailsModalIso, setDayDetailsModalIso] = useState<string | null>(
+    null
+  );
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef<boolean>(false);
+
+  // Modal de Criar/Editar Compromisso
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -60,6 +68,34 @@ export const CalendarView: React.FC = () => {
   const [isHighlight, setIsHighlight] = useState(false);
   const [locationOrLink, setLocationOrLink] = useState('');
   const [notes, setNotes] = useState('');
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleTouchStartDay = (isoDate: string) => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      setSelectedDateIso(isoDate);
+      setDayDetailsModalIso(isoDate);
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate(30);
+      }
+    }, 420);
+  };
+
+  const handleTouchEndDay = () => {
+    clearLongPressTimer();
+  };
+
+  const handleTouchMoveDay = () => {
+    clearLongPressTimer();
+  };
 
   const openNewEventModal = (defaultDate?: string) => {
     setEditingEventId(null);
@@ -216,21 +252,29 @@ export const CalendarView: React.FC = () => {
     [allCombinedEvents, selectedDateIso]
   );
 
+  const modalDayEvents = useMemo(
+    () =>
+      dayDetailsModalIso
+        ? getEventsForDate(allCombinedEvents, dayDetailsModalIso)
+        : [],
+    [allCombinedEvents, dayDetailsModalIso]
+  );
+
   const monthTitle = currentMonthDate.toLocaleDateString('pt-BR', {
     month: 'long',
     year: 'numeric',
   });
 
   return (
-    <div className="space-y-6 pb-16 lg:pb-8">
+    <div className="space-y-4 sm:space-y-6 pb-16 lg:pb-8">
       {/* Header do Módulo */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#211C2B] border border-[#322B40] rounded-2xl p-5 shadow-lg">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 bg-[#211C2B] border border-[#322B40] rounded-2xl p-4 sm:p-5 shadow-lg">
         <div>
           <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/15 border border-rose-400/30 text-rose-300 text-xs font-semibold mb-1.5">
             <CalendarIcon className="w-3.5 h-3.5" />
             <span>Agenda & Recorrência Automática</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#F5F2F8]">
+          <h2 className="text-lg sm:text-2xl font-bold text-[#F5F2F8]">
             Agenda & Calendário
           </h2>
         </div>
@@ -256,7 +300,7 @@ export const CalendarView: React.FC = () => {
 
           <button
             onClick={() => openNewEventModal(selectedDateIso)}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-pink-400 hover:bg-pink-300 text-[#16131D] font-bold text-xs shadow-lg transition"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl bg-pink-400 hover:bg-pink-300 text-[#16131D] font-bold text-xs shadow-lg transition"
           >
             <Plus className="w-4 h-4" />
             <span>Novo Compromisso</span>
@@ -264,104 +308,135 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
-      {/* Layout Principal Ampliado: Calendário Grande (9 ou 12 colunas) + Linha do Tempo */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* CALENDÁRIO MENSAL AMPLIADO */}
+      {/* Layout Principal: Calendário Responsivo + Linha do Tempo */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 sm:gap-6">
+        {/* CALENDÁRIO MENSAL OTIMIZADO PARA CELULAR, TABLET E DESKTOP */}
         <div
           className={`${
             isFullWidthCalendar ? 'xl:col-span-12' : 'xl:col-span-9'
-          } bg-[#211C2B] border border-[#322B40] rounded-2xl p-5 sm:p-6 shadow-lg`}
+          } bg-[#211C2B] border border-[#322B40] rounded-2xl p-2.5 sm:p-5 lg:p-6 shadow-lg`}
         >
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="text-xl font-bold text-[#F5F2F8] capitalize">
-              {monthTitle}
-            </h3>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3 sm:mb-5 px-1 sm:px-0">
+            <div>
+              <h3 className="text-base sm:text-xl font-bold text-[#F5F2F8] capitalize">
+                {monthTitle}
+              </h3>
+              <p className="xl:hidden flex items-center gap-1 text-[11px] text-[#A89FBD] mt-0.5">
+                <Smartphone className="w-3 h-3 text-pink-300 shrink-0" />
+                <span>
+                  Aperte e segure em um dia para abrir os compromissos
+                </span>
+              </p>
+            </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2">
               <button
                 onClick={() => {
                   const now = new Date();
-                  setCurrentMonthDate(new Date(now.getFullYear(), now.getMonth(), 1));
+                  setCurrentMonthDate(
+                    new Date(now.getFullYear(), now.getMonth(), 1)
+                  );
                   setSelectedDateIso(todayIso);
                 }}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#16131D] text-pink-300 border border-pink-400/30 hover:bg-pink-500/15 transition"
+                className="px-3 sm:px-3.5 py-1.5 rounded-xl text-xs font-bold bg-[#16131D] text-pink-300 border border-pink-400/30 hover:bg-pink-500/15 transition"
               >
                 Hoje
               </button>
-              <button
-                onClick={() =>
-                  setCurrentMonthDate(
-                    new Date(
-                      currentMonthDate.getFullYear(),
-                      currentMonthDate.getMonth() - 1,
-                      1
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() =>
+                    setCurrentMonthDate(
+                      new Date(
+                        currentMonthDate.getFullYear(),
+                        currentMonthDate.getMonth() - 1,
+                        1
+                      )
                     )
-                  )
-                }
-                className="p-2 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40]"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() =>
-                  setCurrentMonthDate(
-                    new Date(
-                      currentMonthDate.getFullYear(),
-                      currentMonthDate.getMonth() + 1,
-                      1
+                  }
+                  className="p-2 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40]"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() =>
+                    setCurrentMonthDate(
+                      new Date(
+                        currentMonthDate.getFullYear(),
+                        currentMonthDate.getMonth() + 1,
+                        1
+                      )
                     )
-                  )
-                }
-                className="p-2 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40]"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+                  }
+                  className="p-2 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40]"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Cabeçalho Dias da Semana */}
-          <div className="grid grid-cols-7 gap-2.5 mb-2.5 text-center">
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 lg:gap-2.5 mb-1.5 sm:mb-2.5 text-center">
             {[
-              { short: 'Dom', full: 'Domingo' },
-              { short: 'Seg', full: 'Segunda' },
-              { short: 'Ter', full: 'Terça' },
-              { short: 'Qua', full: 'Quarta' },
-              { short: 'Qui', full: 'Quinta' },
-              { short: 'Sex', full: 'Sexta' },
-              { short: 'Sáb', full: 'Sábado' },
-            ].map((d) => (
+              { mobile: 'D', short: 'Dom', full: 'Domingo' },
+              { mobile: 'S', short: 'Seg', full: 'Segunda' },
+              { mobile: 'T', short: 'Ter', full: 'Terça' },
+              { mobile: 'Q', short: 'Qua', full: 'Quarta' },
+              { mobile: 'Q', short: 'Qui', full: 'Quinta' },
+              { mobile: 'S', short: 'Sex', full: 'Sexta' },
+              { mobile: 'S', short: 'Sáb', full: 'Sábado' },
+            ].map((d, idx) => (
               <div
-                key={d.short}
-                className="text-xs font-bold uppercase tracking-wider text-[#A89FBD] py-1.5 bg-[#16131D]/60 rounded-lg border border-[#322B40]/60"
+                key={`${d.short}-${idx}`}
+                className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-[#A89FBD] py-1 sm:py-1.5 bg-[#16131D]/60 rounded-lg border border-[#322B40]/60"
               >
                 <span className="sm:hidden">{d.short}</span>
-                <span className="hidden sm:inline">{d.full}</span>
+                <span className="hidden sm:inline lg:hidden">{d.short}</span>
+                <span className="hidden lg:inline">{d.full}</span>
               </div>
             ))}
           </div>
 
-          {/* Células Grandes do Mês */}
-          <div className="grid grid-cols-7 gap-2.5">
+          {/* Grade de Dias do Mês */}
+          <div className="grid grid-cols-7 gap-1 sm:gap-2 lg:gap-2.5 select-none">
             {calendarDays.map((cell) => {
               const isSelected = cell.isoDate === selectedDateIso;
               return (
                 <button
                   key={cell.isoDate}
-                  onClick={() => setSelectedDateIso(cell.isoDate)}
+                  type="button"
+                  onClick={() => {
+                    if (longPressTriggeredRef.current) {
+                      longPressTriggeredRef.current = false;
+                      return;
+                    }
+                    setSelectedDateIso(cell.isoDate);
+                  }}
                   onDoubleClick={() => openNewEventModal(cell.isoDate)}
-                  className={`min-h-[120px] sm:min-h-[140px] lg:min-h-[155px] p-2.5 sm:p-3 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                  onTouchStart={() => handleTouchStartDay(cell.isoDate)}
+                  onTouchEnd={handleTouchEndDay}
+                  onTouchMove={handleTouchMoveDay}
+                  onTouchCancel={handleTouchEndDay}
+                  onContextMenu={(e) => {
+                    // Ao segurar em telas touch (Android/iOS/Tablet), evita o menu nativo e abre os compromissos do dia
+                    e.preventDefault();
+                    setSelectedDateIso(cell.isoDate);
+                    setDayDetailsModalIso(cell.isoDate);
+                  }}
+                  className={`min-h-[76px] sm:min-h-[112px] lg:min-h-[150px] p-1 sm:p-2.5 lg:p-3 rounded-xl sm:rounded-2xl border text-left flex flex-col justify-between transition-all overflow-hidden ${
                     isSelected
                       ? 'bg-[#292336] border-pink-400 ring-1 ring-pink-400/50 shadow-md'
                       : cell.isToday
                       ? 'bg-[#1B1624] border-purple-400/70'
                       : cell.isCurrentMonth
                       ? 'bg-[#16131D] border-[#322B40] hover:border-[#A89FBD]/50'
-                      : 'bg-[#16131D]/40 border-[#322B40]/40 opacity-45'
+                      : 'bg-[#16131D]/40 border-[#322B40]/40 opacity-40'
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full mb-1.5">
+                  {/* Topo da célula: número do dia + contador */}
+                  <div className="flex items-center justify-between w-full mb-1">
                     <span
-                      className={`text-xs sm:text-sm font-bold w-7 h-7 rounded-lg flex items-center justify-center ${
+                      className={`text-[11px] sm:text-sm font-bold w-5 h-5 sm:w-7 sm:h-7 rounded-md sm:rounded-lg flex items-center justify-center ${
                         cell.isToday
                           ? 'bg-pink-400 text-[#16131D]'
                           : isSelected
@@ -372,20 +447,40 @@ export const CalendarView: React.FC = () => {
                       {cell.dayNumber}
                     </span>
                     {cell.dayEvents.length > 0 && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-[#211C2B] text-[#A89FBD] border border-[#322B40]">
+                      <span className="px-1 sm:px-1.5 py-0.2 sm:py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-[#211C2B] text-pink-300 sm:text-[#A89FBD] border border-[#322B40]">
                         {cell.dayEvents.length}
                       </span>
                     )}
                   </div>
 
-                  {/* Pílulas de Eventos com Cores Distintas */}
-                  <div className="space-y-1.5 w-full overflow-hidden flex-1">
+                  {/* Visualização Mobile (< 640px): Pílulas ultra-compactas + pontos de cor */}
+                  <div className="sm:hidden space-y-0.5 w-full overflow-hidden flex-1">
+                    {cell.dayEvents.slice(0, 2).map((ev) => {
+                      const st = getCategoryStyle(ev.category);
+                      return (
+                        <div
+                          key={`mob-${ev.id}-${cell.isoDate}`}
+                          className={`px-1 py-0.5 rounded text-[9px] leading-tight font-semibold truncate ${st.cardClass}`}
+                        >
+                          <span className="text-[#F5F2F8]">{ev.title}</span>
+                        </div>
+                      );
+                    })}
+                    {cell.dayEvents.length > 2 && (
+                      <div className="text-[8.5px] text-pink-300 font-bold pl-0.5 leading-tight">
+                        +{cell.dayEvents.length - 2} mais
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Visualização Tablet & Desktop (>= 640px): Pílulas completas com horário */}
+                  <div className="hidden sm:block space-y-1.5 w-full overflow-hidden flex-1">
                     {cell.dayEvents.slice(0, 3).map((ev) => {
                       const st = getCategoryStyle(ev.category);
                       return (
                         <div
                           key={`${ev.id}-${cell.isoDate}`}
-                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold truncate ${st.cardClass}`}
+                          className={`px-1.5 lg:px-2 py-0.5 lg:py-1 rounded-lg text-[10px] lg:text-[11px] font-semibold truncate ${st.cardClass}`}
                         >
                           <span className={`font-bold mr-1 ${st.textClass}`}>
                             {ev.startTime}
@@ -410,7 +505,7 @@ export const CalendarView: React.FC = () => {
         <div
           className={`${
             isFullWidthCalendar ? 'xl:col-span-12' : 'xl:col-span-3'
-          } bg-[#211C2B] border border-[#322B40] rounded-2xl p-5 flex flex-col justify-between shadow-lg`}
+          } bg-[#211C2B] border border-[#322B40] rounded-2xl p-4 sm:p-5 flex flex-col justify-between shadow-lg`}
         >
           <div>
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#322B40]">
@@ -432,12 +527,12 @@ export const CalendarView: React.FC = () => {
             </div>
 
             {selectedDayEvents.length === 0 ? (
-              <div className="py-12 px-4 text-center rounded-2xl bg-[#16131D] border border-[#322B40] space-y-2">
+              <div className="py-10 sm:py-12 px-4 text-center rounded-2xl bg-[#16131D] border border-[#322B40] space-y-2">
                 <p className="text-sm font-medium text-[#F5F2F8]">
                   Dia livre na agenda
                 </p>
                 <p className="text-xs text-[#A89FBD]">
-                  Clique em "+ Novo Compromisso" (ou dê duplo clique em um dia no calendário) para agendar.
+                  Clique em "+ Novo Compromisso" (ou segure em um dia no celular/tablet) para ver ou agendar.
                 </p>
               </div>
             ) : (
@@ -522,7 +617,141 @@ export const CalendarView: React.FC = () => {
         </div>
       </div>
 
-      {/* Modal de Compromisso */}
+      {/* MODAL / BOTTOM SHEET DE COMPROMISSOS DO DIA (AO APERTAR E SEGURAR NO CELULAR/TABLET) */}
+      {dayDetailsModalIso && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-0 sm:p-4"
+          onClick={() => setDayDetailsModalIso(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#211C2B] border-t sm:border border-[#322B40] rounded-t-3xl sm:rounded-2xl w-full max-w-lg p-5 sm:p-6 shadow-2xl max-h-[85vh] overflow-y-auto space-y-4"
+          >
+            {/* Indicador de puxar no mobile */}
+            <div className="w-12 h-1.5 bg-[#322B40] rounded-full mx-auto sm:hidden" />
+
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-[#322B40]">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-pink-300">
+                  Compromissos do Dia
+                </span>
+                <h3 className="text-lg font-bold text-[#F5F2F8] capitalize mt-0.5">
+                  {formatFullDatePtBR(dayDetailsModalIso)}
+                </h3>
+              </div>
+              <button
+                onClick={() => setDayDetailsModalIso(null)}
+                className="p-1.5 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {modalDayEvents.length === 0 ? (
+              <div className="py-8 px-4 text-center rounded-2xl bg-[#16131D] border border-[#322B40] space-y-1.5">
+                <p className="text-sm font-semibold text-[#F5F2F8]">
+                  Nenhum compromisso neste dia
+                </p>
+                <p className="text-xs text-[#A89FBD]">
+                  Toque no botão abaixo para adicionar um compromisso nesta data.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {modalDayEvents.map((ev) => {
+                  const st = getCategoryStyle(ev.category);
+                  const isFromCollegeUnit = ev.id.startsWith('college-ass-');
+
+                  return (
+                    <div
+                      key={`modal-${ev.id}`}
+                      className={`p-4 rounded-xl space-y-2 ${st.cardClass}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-bold ${st.badgeClass}`}
+                          >
+                            <Clock className="w-3 h-3" />
+                            {ev.startTime}
+                            {ev.endTime !== ev.startTime ? ` - ${ev.endTime}` : ''}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-[#16131D]/80 text-[#A89FBD]">
+                            {st.label}
+                          </span>
+                        </div>
+
+                        {!isFromCollegeUnit && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setDayDetailsModalIso(null);
+                                openEditEventModal(ev);
+                              }}
+                              className="p-1.5 rounded-lg bg-[#16131D]/60 text-[#A89FBD] hover:text-[#F5F2F8]"
+                              title="Editar"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => deleteEvent(ev.id)}
+                              className="p-1.5 rounded-lg bg-[#16131D]/60 text-[#A89FBD] hover:text-rose-300"
+                              title="Excluir"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      <h4 className="text-sm font-bold text-[#F5F2F8]">
+                        {ev.title}
+                      </h4>
+
+                      {ev.locationOrLink && (
+                        <div className="flex items-center gap-1.5 text-xs text-[#A89FBD]">
+                          <MapPin className="w-3.5 h-3.5 text-pink-300 shrink-0" />
+                          <span>{ev.locationOrLink}</span>
+                        </div>
+                      )}
+
+                      {ev.notes && (
+                        <p className="text-xs text-[#A89FBD] bg-[#16131D]/70 p-2.5 rounded-xl">
+                          {ev.notes}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="pt-2 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDayDetailsModalIso(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#16131D] text-[#A89FBD] border border-[#322B40]"
+              >
+                Fechar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetDate = dayDetailsModalIso;
+                  setDayDetailsModalIso(null);
+                  openNewEventModal(targetDate);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold bg-pink-400 text-[#16131D] hover:bg-pink-300 transition"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Novo Compromisso neste dia</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Criar/Editar Compromisso */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="bg-[#211C2B] border border-[#322B40] rounded-2xl w-full max-w-lg p-6 shadow-2xl max-h-[92vh] overflow-y-auto">

@@ -52,7 +52,12 @@ interface PlannerStore extends PlannerDataState {
 
   // College Subjects, Units, Tablet Notes & Assessments
   addCollegeSubject: (
-    subject: Omit<CollegeSubject, 'id' | 'units'>
+    subject: Omit<CollegeSubject, 'id' | 'units'>,
+    initialSchedules?: Omit<FixedClassSlot, 'id' | 'subjectId' | 'subjectName'>[]
+  ) => Promise<string>;
+  setSubjectSchedules: (
+    subjectId: string,
+    schedules: Omit<FixedClassSlot, 'id' | 'subjectId' | 'subjectName'>[]
   ) => Promise<void>;
   deleteCollegeSubject: (subjectId: string) => Promise<void>;
   uploadUnitTabletNote: (
@@ -328,7 +333,7 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
       await persistCurrentState();
     },
 
-    addCollegeSubject: async (subjectData) => {
+    addCollegeSubject: async (subjectData, initialSchedules = []) => {
       const id = `subj-${Date.now()}`;
       const newSubject: CollegeSubject = {
         ...subjectData,
@@ -339,9 +344,51 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
           { id: `u3-${id}`, unitNumber: 3, title: '3ª Unidade', tabletNotes: [], assessments: [] },
         ],
       };
+
+      const createdSlots: FixedClassSlot[] = initialSchedules.map((slot, idx) => ({
+        id: `cls-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        subjectId: id,
+        subjectName: subjectData.name,
+        dayOfWeek: slot.dayOfWeek,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        room: slot.room || subjectData.room || 'Sala',
+        professor: slot.professor || subjectData.professor || '',
+      }));
+
       set((state) => ({
         collegeSubjects: [...state.collegeSubjects, newSubject],
+        fixedClasses: [...state.fixedClasses, ...createdSlots],
       }));
+      await persistCurrentState();
+      return id;
+    },
+
+    setSubjectSchedules: async (subjectId, schedules) => {
+      const state = get();
+      const subj = state.collegeSubjects.find((s) => s.id === subjectId);
+      if (!subj) return;
+
+      const otherClasses = state.fixedClasses.filter(
+        (c) =>
+          c.subjectId !== subjectId &&
+          c.subjectName.toLowerCase() !== subj.name.toLowerCase()
+      );
+
+      const newSlots: FixedClassSlot[] = schedules.map((slot, idx) => ({
+        id: `cls-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        subjectId: subj.id,
+        subjectName: subj.name,
+        dayOfWeek: slot.dayOfWeek,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        room: slot.room || subj.room || 'Sala',
+        professor: slot.professor || subj.professor || '',
+      }));
+
+      set({
+        fixedClasses: [...otherClasses, ...newSlots],
+      });
       await persistCurrentState();
     },
 
