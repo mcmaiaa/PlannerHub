@@ -329,57 +329,57 @@ export const CollegeView: React.FC = () => {
   return (
     <div className="space-y-6 pb-16 lg:pb-8">
       {/* Header do Módulo Faculdade */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-[#211C2B] border border-[#322B40] rounded-2xl p-5 shadow-lg">
-        <div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-400/30 text-purple-300 text-xs font-semibold mb-1.5">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-[#211C2B] border border-[#322B40] rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div className="shrink-0">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-500/15 border border-purple-400/30 text-purple-300 text-xs font-semibold mb-1">
             <GraduationCap className="w-3.5 h-3.5" />
             <span>Módulo Acadêmico</span>
           </div>
-          <h2 className="text-xl sm:text-2xl font-bold text-[#F5F2F8]">
-            Faculdade • Grade, Unidades & Notas do Tablet
+          <h2 className="text-lg sm:text-xl font-bold text-[#F5F2F8]">
+            Faculdade & Unidades
           </h2>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex items-center bg-[#16131D] p-1 rounded-xl border border-[#322B40]">
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 overflow-x-auto">
+          <div className="flex items-center bg-[#16131D] p-1 rounded-xl border border-[#322B40] shrink-0">
             <button
               onClick={() => setSubTab('units')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition ${
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition ${
                 subTab === 'units'
                   ? 'bg-purple-400 text-[#16131D] shadow'
                   : 'text-[#A89FBD] hover:text-[#F5F2F8]'
               }`}
             >
-              <BookOpen className="w-4 h-4" />
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
               <span>Disciplinas & Unidades</span>
             </button>
 
             <button
               onClick={() => setSubTab('schedule')}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition ${
+              className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition ${
                 subTab === 'schedule'
                   ? 'bg-purple-400 text-[#16131D] shadow'
                   : 'text-[#A89FBD] hover:text-[#F5F2F8]'
               }`}
             >
-              <CalendarRange className="w-4 h-4" />
-              <span>Grade Horária Fixa</span>
+              <CalendarRange className="w-3.5 h-3.5 shrink-0" />
+              <span>Grade Horária</span>
             </button>
           </div>
 
           {subTab === 'units' && collegeSubjects.length > 0 && (
             <button
               onClick={toggleMinimizeAll}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40] font-semibold text-xs transition"
+              className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-[#16131D] text-[#A89FBD] hover:text-[#F5F2F8] border border-[#322B40] font-semibold text-xs whitespace-nowrap shrink-0 transition"
             >
               {allMinimized ? (
                 <>
-                  <ChevronsDown className="w-4 h-4 text-purple-300" />
+                  <ChevronsDown className="w-3.5 h-3.5 text-purple-300 shrink-0" />
                   <span>Expandir Todas</span>
                 </>
               ) : (
                 <>
-                  <ChevronsUp className="w-4 h-4 text-purple-300" />
+                  <ChevronsUp className="w-3.5 h-3.5 text-purple-300 shrink-0" />
                   <span>Minimizar Todas</span>
                 </>
               )}
@@ -389,17 +389,17 @@ export const CollegeView: React.FC = () => {
           {subTab === 'units' ? (
             <button
               onClick={() => setIsSubjectModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/40 hover:bg-purple-500/30 font-bold text-xs transition"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/40 hover:bg-purple-500/30 font-bold text-xs whitespace-nowrap shrink-0 transition"
             >
-              <Plus className="w-4 h-4" />
-              <span>Nova Disciplina + Horários</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Nova Disciplina</span>
             </button>
           ) : (
             <button
               onClick={() => openAddClassModal(1)}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/40 hover:bg-purple-500/30 font-bold text-xs transition"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-purple-500/20 text-purple-200 border border-purple-400/40 hover:bg-purple-500/30 font-bold text-xs whitespace-nowrap shrink-0 transition"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-4 h-4 shrink-0" />
               <span>Adicionar Horários</span>
             </button>
           )}
