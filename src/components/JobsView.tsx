@@ -27,6 +27,11 @@ import {
   MessageSquare,
   Award,
   TrendingUp,
+  Sparkles,
+  Copy,
+  Check,
+  FileCode2,
+  AlertCircle,
 } from 'lucide-react';
 import { usePlannerStore } from '../store/usePlannerStore';
 import {
@@ -160,6 +165,241 @@ const KANBAN_STAGE_ORDER: JobApplicationStatus[] = [
   'desistencia',
 ];
 
+export const AI_JOB_EXTRACTION_PROMPT = `Você é um assistente especialista em análise de vagas de emprego, estágio e programas de trainee.
+Analise as informações ou o link da vaga que enviarei a seguir e retorne EXCLUSIVAMENTE um objeto JSON válido (sem texto antes ou depois, e sem inventar nenhuma informação).
+
+REGRAS OBRIGATÓRIAS:
+1. Retorne APENAS o JSON válido seguindo exatamente as chaves abaixo.
+2. NÃO invente dados que não estejam na vaga.
+3. Diferencie claramente:
+   - Se uma informação não foi divulgada pela empresa, escreva "Não informado na vaga" (ou deixe "" em campos de data/link).
+   - Se uma informação não faz sentido para a vaga (ex: endereço presencial em vaga 100% remota), escreva "Não se aplica".
+4. Em "description", organize em tópicos curtos: Resumo da vaga, Requisitos obrigatórios, Diferenciais e Benefícios/Bolsa (indicando "Não informado na vaga" caso a remuneração não seja mencionada).
+
+ESTRUTURA EXATA DO JSON ESPERADO PELO PLANNER HUB:
+{
+  "company": "Nome da empresa (ou 'Empresa não informada')",
+  "title": "Nome ou título exato da vaga",
+  "link": "URL oficial da vaga (ou '' se não houver)",
+  "opportunityType": "estagio | efetivo | trainee | bolsa | freelance",
+  "workMode": "remoto | hibrido | presencial",
+  "area": "Área de atuação (ex: Front-end, Full Stack, Dados & IA, Back-end, QA, UX/UI, DevOps)",
+  "location": "Cidade/UF, País, 'Não se aplica (100% Remoto)' ou 'Não informado na vaga'",
+  "description": "Resumo completo da oportunidade, requisitos técnicos, atividades e benefícios/remuneração.",
+  "status": "interessado",
+  "appliedDate": "",
+  "nextStep": "Prazo limite de inscrição ou etapas do processo seletivo mencionadas na vaga (ou '' se não informado)",
+  "nextStepDate": "YYYY-MM-DD (apenas se houver data limite explícita na vaga, senão '')",
+  "personalNotes": "Pontos de atenção, principais tecnologias pedidas e o que não foi informado no anúncio."
+}
+
+DADOS / LINK DA VAGA PARA ANALISAR:
+[Cole aqui o link ou a descrição da vaga]`;
+
+interface ParsedAiJobResult {
+  company: string;
+  title: string;
+  link: string;
+  opportunityType: JobOpportunityType;
+  workMode: JobWorkMode;
+  area: string;
+  location: string;
+  description: string;
+  status: JobApplicationStatus;
+  appliedDate: string;
+  nextStep: string;
+  nextStepDate: string;
+  companyFeedback: string;
+  personalNotes: string;
+  warnings: string[];
+}
+
+function normalizeIsoDateOrEmpty(val: unknown): string {
+  if (typeof val !== 'string') return '';
+  const trimmed = val.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
+  // Converte DD/MM/YYYY para YYYY-MM-DD se a IA retornar em formato brasileiro
+  const brMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+  }
+  return '';
+}
+
+function parseAndValidateAiJobJson(rawInput: string): {
+  data?: ParsedAiJobResult;
+  error?: string;
+} {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    return {
+      error:
+        'Cole o JSON gerado pela IA no campo de texto antes de preencher o formulário.',
+    };
+  }
+
+  // Remove cercas markdown ```json ... ``` ou extrai o bloco { ... }
+  let jsonCandidate = trimmed
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  if (!jsonCandidate.startsWith('{') && !jsonCandidate.startsWith('[')) {
+    const firstBrace = jsonCandidate.indexOf('{');
+    const lastBrace = jsonCandidate.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      jsonCandidate = jsonCandidate.slice(firstBrace, lastBrace + 1);
+    }
+  }
+
+  let parsedRaw: unknown;
+  try {
+    parsedRaw = JSON.parse(jsonCandidate);
+  } catch {
+    return {
+      error:
+        'O texto colado não é um JSON válido. Certifique-se de copiar todo o bloco JSON (começando com "{" e terminando com "}") gerado pela IA.',
+    };
+  }
+
+  const obj = Array.isArray(parsedRaw) ? parsedRaw[0] : parsedRaw;
+  if (!obj || typeof obj !== 'object') {
+    return {
+      error:
+        'A estrutura do JSON não corresponde a um objeto de vaga. Verifique o conteúdo colado.',
+    };
+  }
+
+  const record = obj as Record<string, unknown>;
+  const getStr = (...keys: string[]): string => {
+    for (const k of keys) {
+      const v = record[k];
+      if (typeof v === 'string' && v.trim()) {
+        return v.trim();
+      }
+    }
+    return '';
+  };
+
+  const company = getStr('company', 'empresa', 'organization');
+  const title = getStr('title', 'titulo', 'cargo', 'role', 'nome');
+
+  if (!company && !title) {
+    return {
+      error:
+        'O JSON não contém os campos principais da vaga ("company" e "title"). Confira se a IA seguiu o prompt do Planner Hub.',
+    };
+  }
+
+  const warnings: string[] = [];
+  if (!company || company.toLowerCase().includes('não informad')) {
+    warnings.push(
+      'O nome da empresa veio como "Não informado". Você pode editá-lo manualmente abaixo.'
+    );
+  }
+  if (!title || title.toLowerCase().includes('não informad')) {
+    warnings.push(
+      'O título da vaga veio como "Não informado". Revise o campo antes de salvar.'
+    );
+  }
+
+  // Normaliza modalidade
+  const rawMode = getStr('workMode', 'modalidade', 'mode').toLowerCase();
+  let workMode: JobWorkMode = 'remoto';
+  if (rawMode.includes('hibrid') || rawMode.includes('híbrid')) {
+    workMode = 'hibrido';
+  } else if (rawMode.includes('presencial') || rawMode.includes('onsite')) {
+    workMode = 'presencial';
+  } else if (rawMode.includes('remot') || rawMode.includes('home')) {
+    workMode = 'remoto';
+  }
+
+  // Normaliza tipo de oportunidade
+  const rawType = getStr(
+    'opportunityType',
+    'tipo',
+    'type',
+    'tipoOportunidade'
+  ).toLowerCase();
+  let opportunityType: JobOpportunityType = 'estagio';
+  if (
+    rawType.includes('efetiv') ||
+    rawType.includes('clt') ||
+    rawType.includes('pj') ||
+    rawType.includes('junior') ||
+    rawType.includes('júnior') ||
+    rawType.includes('pleno') ||
+    rawType.includes('senior')
+  ) {
+    opportunityType = 'efetivo';
+  } else if (rawType.includes('trainee')) {
+    opportunityType = 'trainee';
+  } else if (rawType.includes('bolsa') || rawType.includes('pesquisa')) {
+    opportunityType = 'bolsa';
+  } else if (rawType.includes('freela') || rawType.includes('projeto')) {
+    opportunityType = 'freelance';
+  } else {
+    opportunityType = 'estagio';
+  }
+
+  // Normaliza status
+  const rawStatus = getStr('status', 'statusCandidatura').toLowerCase();
+  const validStatuses: JobApplicationStatus[] = [
+    'interessado',
+    'inscrito',
+    'em_analise',
+    'teste_tecnico',
+    'entrevista',
+    'aprovado',
+    'reprovado',
+    'desistencia',
+  ];
+  const status: JobApplicationStatus = validStatuses.includes(
+    rawStatus as JobApplicationStatus
+  )
+    ? (rawStatus as JobApplicationStatus)
+    : 'interessado';
+
+  // Monta descrição enriquecida caso a IA tenha enviado campos extras como requirements/benefits
+  let description = getStr('description', 'descricao', 'resumo');
+  const extraReqs = getStr('requirements', 'requisitos');
+  const extraBenefits = getStr('benefits', 'beneficios', 'remuneracao', 'bolsa');
+  if (extraReqs && !description.includes(extraReqs)) {
+    description = description
+      ? `${description}\n\nRequisitos: ${extraReqs}`
+      : `Requisitos: ${extraReqs}`;
+  }
+  if (extraBenefits && !description.includes(extraBenefits)) {
+    description = description
+      ? `${description}\n\nBenefícios / Bolsa: ${extraBenefits}`
+      : `Benefícios / Bolsa: ${extraBenefits}`;
+  }
+
+  return {
+    data: {
+      company: company || 'Empresa a definir',
+      title: title || 'Oportunidade',
+      link: getStr('link', 'url', 'jobUrl'),
+      opportunityType,
+      workMode,
+      area: getStr('area', 'areaAtuacao', 'stack'),
+      location: getStr('location', 'localizacao', 'local'),
+      description,
+      status,
+      appliedDate: normalizeIsoDateOrEmpty(
+        record.appliedDate ?? record.dataInscricao
+      ),
+      nextStep: getStr('nextStep', 'proximaEtapa', 'prazo'),
+      nextStepDate: normalizeIsoDateOrEmpty(
+        record.nextStepDate ?? record.dataProximaEtapa
+      ),
+      companyFeedback: getStr('companyFeedback', 'devolutiva'),
+      personalNotes: getStr('personalNotes', 'observacoes', 'notas'),
+      warnings,
+    },
+  };
+}
+
 type ViewMode = 'cards' | 'kanban' | 'table';
 type SectionTab = 'my_jobs' | 'shared';
 type SortOption = 'updated_desc' | 'applied_desc' | 'next_step_asc' | 'status_order' | 'company_asc';
@@ -244,6 +484,16 @@ export const JobsView: React.FC = () => {
   const [shareSuccess, setShareSuccess] = useState<string | null>(null);
   const [isSendingShare, setIsSendingShare] = useState(false);
   const [isRefreshingShares, setIsRefreshingShares] = useState(false);
+
+  // Modal "Cadastrar com IA" (Prompt + Colar JSON)
+  const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+  const [aiJsonInput, setAiJsonInput] = useState('');
+  const [aiJsonError, setAiJsonError] = useState<string | null>(null);
+  const [isPromptCopied, setIsPromptCopied] = useState(false);
+  const [showPromptPreview, setShowPromptPreview] = useState(false);
+  const [aiImportBanner, setAiImportBanner] = useState<{
+    warnings: string[];
+  } | null>(null);
 
   useEffect(() => {
     refreshSharedJobs();
@@ -374,6 +624,7 @@ export const JobsView: React.FC = () => {
 
   const openNewJobModal = (defaultStatus: JobApplicationStatus = 'interessado') => {
     setEditingJobId(null);
+    setAiImportBanner(null);
     setCompany('');
     setTitle('');
     setLink('');
@@ -393,8 +644,60 @@ export const JobsView: React.FC = () => {
     setIsFormModalOpen(true);
   };
 
+  const openAiAssistModal = () => {
+    setAiJsonInput('');
+    setAiJsonError(null);
+    setIsPromptCopied(false);
+    setIsAiModalOpen(true);
+  };
+
+  const handleCopyAiPrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(AI_JOB_EXTRACTION_PROMPT);
+      setIsPromptCopied(true);
+      setTimeout(() => setIsPromptCopied(false), 2500);
+    } catch {
+      // Fallback para seleção manual
+      setShowPromptPreview(true);
+    }
+  };
+
+  const handleApplyAiJsonToForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    setAiJsonError(null);
+    const result = parseAndValidateAiJobJson(aiJsonInput);
+    if (result.error || !result.data) {
+      setAiJsonError(
+        result.error || 'Não foi possível interpretar o JSON informado.'
+      );
+      return;
+    }
+
+    const d = result.data;
+    setEditingJobId(null);
+    setCompany(d.company);
+    setTitle(d.title);
+    setLink(d.link);
+    setOpportunityType(d.opportunityType);
+    setWorkMode(d.workMode);
+    setArea(d.area);
+    setLocation(d.location);
+    setDescription(d.description);
+    setStatus(d.status);
+    setAppliedDate(d.appliedDate);
+    setNextStep(d.nextStep);
+    setNextStepDate(d.nextStepDate);
+    setCompanyFeedback(d.companyFeedback);
+    setPersonalNotes(d.personalNotes);
+    setAiImportBanner({ warnings: d.warnings });
+
+    setIsAiModalOpen(false);
+    setIsFormModalOpen(true);
+  };
+
   const openEditJobModal = (job: JobOpportunity) => {
     setEditingJobId(job.id);
+    setAiImportBanner(null);
     setCompany(job.company);
     setTitle(job.title);
     setLink(job.link || '');
@@ -606,6 +909,15 @@ export const JobsView: React.FC = () => {
           )}
 
           <button
+            onClick={openAiAssistModal}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/40 font-bold text-xs whitespace-nowrap shrink-0 transition"
+            title="Gerar JSON com IA e preencher vaga automaticamente"
+          >
+            <Sparkles className="w-4 h-4 text-purple-300 shrink-0" />
+            <span>Cadastrar com IA</span>
+          </button>
+
+          <button
             onClick={() => openNewJobModal('interessado')}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-pink-400 hover:bg-pink-300 text-[#16131D] font-bold text-xs whitespace-nowrap shrink-0 shadow-lg transition"
           >
@@ -814,13 +1126,22 @@ export const JobsView: React.FC = () => {
                     Limpar filtros
                   </button>
                 ) : (
-                  <button
-                    onClick={() => openNewJobModal('interessado')}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-pink-400 text-[#16131D] font-bold text-xs"
-                  >
-                    <Plus className="w-4 h-4" />
-                    <span>Cadastrar Primeira Vaga</span>
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2.5">
+                    <button
+                      onClick={openAiAssistModal}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/40 font-bold text-xs transition"
+                    >
+                      <Sparkles className="w-4 h-4 text-purple-300" />
+                      <span>Cadastrar com IA</span>
+                    </button>
+                    <button
+                      onClick={() => openNewJobModal('interessado')}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-pink-400 text-[#16131D] font-bold text-xs"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Cadastrar Manualmente</span>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -1620,7 +1941,7 @@ export const JobsView: React.FC = () => {
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="bg-[#211C2B] border border-[#322B40] rounded-2xl w-full max-w-2xl p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-[#322B40]">
+            <div className="flex items-center justify-between gap-2 pb-4 border-b border-[#322B40]">
               <div>
                 <h3 className="text-lg font-bold text-[#F5F2F8]">
                   {editingJobId ? 'Editar Vaga' : 'Nova Oportunidade / Vaga'}
@@ -1629,13 +1950,46 @@ export const JobsView: React.FC = () => {
                   Apenas Empresa e Título da vaga são obrigatórios.
                 </p>
               </div>
-              <button
-                onClick={() => setIsFormModalOpen(false)}
-                className="p-1.5 rounded-xl text-[#A89FBD] hover:text-[#F5F2F8]"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {!editingJobId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFormModalOpen(false);
+                      openAiAssistModal();
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-400/40 text-xs font-bold transition"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+                    <span>Preencher com IA</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsFormModalOpen(false)}
+                  className="p-1.5 rounded-xl text-[#A89FBD] hover:text-[#F5F2F8]"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {aiImportBanner && (
+              <div className="mt-4 p-3.5 rounded-xl bg-emerald-500/15 border border-emerald-400/35 space-y-1.5">
+                <div className="flex items-center gap-2 text-xs font-bold text-emerald-300">
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                  <span>
+                    Dados importados com sucesso via IA! Revise ou edite qualquer campo abaixo antes de confirmar o cadastro.
+                  </span>
+                </div>
+                {aiImportBanner.warnings.length > 0 && (
+                  <ul className="text-[11px] text-amber-200 list-disc list-inside space-y-0.5">
+                    {aiImportBanner.warnings.map((w, i) => (
+                      <li key={i}>{w}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <form onSubmit={handleSaveJob} className="space-y-5 mt-4">
               {/* Bloco 1: Informações Principais da Oportunidade */}
@@ -2276,6 +2630,163 @@ export const JobsView: React.FC = () => {
                   <span>
                     {isSendingShare ? 'Enviando...' : 'Compartilhar Vaga'}
                   </span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          MODAL 4: CADASTRAR VAGA COM IA (COPIAR PROMPT & COLAR JSON)
+         ===================================================================== */}
+      {isAiModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+          onClick={() => setIsAiModalOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#211C2B] border border-[#322B40] rounded-2xl w-full max-w-xl p-5 sm:p-6 shadow-2xl max-h-[92vh] overflow-y-auto space-y-5"
+          >
+            {/* Cabeçalho */}
+            <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#322B40]">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/35 flex items-center justify-center text-purple-300 shrink-0">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-[#F5F2F8]">
+                    Cadastrar Vaga com IA
+                  </h3>
+                  <p className="text-xs text-[#A89FBD] mt-0.5">
+                    Copie o prompt abaixo, envie para sua IA favorita junto com o link ou texto da vaga e cole o JSON gerado aqui.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAiModalOpen(false)}
+                className="p-1.5 rounded-xl text-[#A89FBD] hover:text-[#F5F2F8]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Passo 1: Copiar Instruções (Prompt) */}
+            <div className="p-4 rounded-2xl bg-[#16131D] border border-purple-400/30 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-purple-300">
+                    Passo 1 • Instruções para a IA
+                  </span>
+                  <h4 className="text-sm font-bold text-[#F5F2F8] mt-0.5">
+                    Copie o prompt padronizado do Planner Hub
+                  </h4>
+                  <p className="text-xs text-[#A89FBD]">
+                    Ele orienta a IA a extrair todos os campos sem inventar dados e a retornar apenas o JSON.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleCopyAiPrompt}
+                  className={`inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold shrink-0 transition ${
+                    isPromptCopied
+                      ? 'bg-emerald-400 text-[#16131D]'
+                      : 'bg-purple-400 hover:bg-purple-300 text-[#16131D]'
+                  }`}
+                >
+                  {isPromptCopied ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span>Prompt Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span>Copiar Prompt</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="pt-1 flex items-center justify-between border-t border-[#322B40]">
+                <button
+                  type="button"
+                  onClick={() => setShowPromptPreview((prev) => !prev)}
+                  className="text-[11px] font-semibold text-purple-300 hover:underline"
+                >
+                  {showPromptPreview
+                    ? 'Ocultar texto do prompt'
+                    : 'Ver texto completo do prompt'}
+                </button>
+                <span className="text-[11px] text-[#A89FBD]">
+                  Compatível com ChatGPT, Gemini, Claude, Copilot
+                </span>
+              </div>
+
+              {showPromptPreview && (
+                <pre className="p-3 rounded-xl bg-[#211C2B] border border-[#322B40] text-[11px] text-[#A89FBD] whitespace-pre-wrap font-mono max-h-44 overflow-y-auto select-all">
+                  {AI_JOB_EXTRACTION_PROMPT}
+                </pre>
+              )}
+            </div>
+
+            {/* Passo 2: Colar o JSON recebido */}
+            <form onSubmit={handleApplyAiJsonToForm} className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-pink-300 flex items-center gap-1.5">
+                    <FileCode2 className="w-3.5 h-3.5" />
+                    <span>Passo 2 • Cole o JSON retornado pela IA</span>
+                  </label>
+                  {aiJsonInput.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAiJsonInput('');
+                        setAiJsonError(null);
+                      }}
+                      className="text-[11px] text-[#A89FBD] hover:text-rose-300"
+                    >
+                      Limpar texto
+                    </button>
+                  )}
+                </div>
+
+                <textarea
+                  rows={7}
+                  value={aiJsonInput}
+                  onChange={(e) => {
+                    setAiJsonInput(e.target.value);
+                    if (aiJsonError) setAiJsonError(null);
+                  }}
+                  placeholder={`{\n  "company": "Nome da Empresa",\n  "title": "Pessoa Desenvolvedora Front-end",\n  "opportunityType": "estagio",\n  "workMode": "remoto",\n  ...\n}`}
+                  className="w-full p-3.5 rounded-xl bg-[#16131D] border border-[#322B40] focus:border-pink-400 focus:outline-none text-xs font-mono text-[#F5F2F8] placeholder-[#A89FBD]/40 resize-none"
+                />
+              </div>
+
+              {aiJsonError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-400/35 flex items-start gap-2 text-xs text-rose-200">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <span>{aiJsonError}</span>
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center justify-end gap-2.5 border-t border-[#322B40]">
+                <button
+                  type="button"
+                  onClick={() => setIsAiModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold bg-[#16131D] text-[#A89FBD] border border-[#322B40]"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-xs font-bold bg-pink-400 hover:bg-pink-300 text-[#16131D] shadow-lg transition"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Preencher Formulário para Revisão</span>
                 </button>
               </div>
             </form>
