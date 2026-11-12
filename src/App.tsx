@@ -4,6 +4,7 @@ import { DashboardView } from './components/DashboardView';
 import { CalendarView } from './components/CalendarView';
 import { CollegeView } from './components/CollegeView';
 import { ExamView } from './components/ExamView';
+import { JobsView } from './components/JobsView';
 import { AuthView } from './components/AuthView';
 import { FilePreviewModal } from './components/FilePreviewModal';
 import { usePlannerStore } from './store/usePlannerStore';
@@ -45,6 +46,7 @@ export const App: React.FC = () => {
             {activeTab === 'calendar' && <CalendarView />}
             {activeTab === 'college' && <CollegeView />}
             {activeTab === 'concurso' && <ExamView />}
+            {activeTab === 'vagas' && <JobsView />}
           </>
         )}
       </main>

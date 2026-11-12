@@ -36,6 +36,7 @@ export const CalendarView: React.FC = () => {
   const {
     events = [],
     collegeSubjects = [],
+    jobs = [],
     addEvent,
     updateEvent,
     deleteEvent,
@@ -185,10 +186,26 @@ export const CalendarView: React.FC = () => {
     return list;
   }, [collegeSubjects]);
 
-  const allCombinedEvents = useMemo(
-    () => [...events, ...collegeCalendarEvents],
-    [events, collegeCalendarEvents]
-  );
+  const allCombinedEvents = useMemo(() => {
+    const jobEvents: CalendarEvent[] = jobs
+      .filter(
+        (j) =>
+          j.nextStepDate && !['reprovado', 'desistencia'].includes(j.status)
+      )
+      .map((j) => ({
+        id: `job-step-${j.id}`,
+        title: `${j.company}: ${j.nextStep || j.title}`,
+        date: j.nextStepDate!,
+        startTime: '09:00',
+        endTime: '10:00',
+        category: 'entrevista' as const,
+        recurrence: 'unico' as const,
+        isHighlight: true,
+        locationOrLink: `Vaga: ${j.title}`,
+      }));
+
+    return [...events, ...collegeCalendarEvents, ...jobEvents];
+  }, [events, collegeCalendarEvents, jobs]);
 
   const calendarDays = useMemo(() => {
     const year = currentMonthDate.getFullYear();
@@ -539,7 +556,9 @@ export const CalendarView: React.FC = () => {
               <div className="space-y-3">
                 {selectedDayEvents.map((ev) => {
                   const st = getCategoryStyle(ev.category);
-                  const isFromCollegeUnit = ev.id.startsWith('college-ass-');
+                  const isFromCollegeUnit =
+                    ev.id.startsWith('college-ass-') ||
+                    ev.id.startsWith('job-step-');
 
                   return (
                     <div
@@ -660,7 +679,9 @@ export const CalendarView: React.FC = () => {
               <div className="space-y-3">
                 {modalDayEvents.map((ev) => {
                   const st = getCategoryStyle(ev.category);
-                  const isFromCollegeUnit = ev.id.startsWith('college-ass-');
+                  const isFromCollegeUnit =
+                    ev.id.startsWith('college-ass-') ||
+                    ev.id.startsWith('job-step-');
 
                   return (
                     <div

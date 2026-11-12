@@ -1,7 +1,11 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import {
   AppTheme,
+  JobOpportunity,
   PlannerDataState,
+  PublicUserSummary,
+  SharedJobItem,
+  SharedJobPayload,
   TabletNoteAttachment,
   UserAccount,
 } from '../types';
@@ -15,6 +19,7 @@ const LOCAL_STORAGE_KEY = 'planner_study_hub_state_v1';
 const ACTIVE_USER_KEY = 'planner_study_hub_active_user_v1';
 const KNOWN_USERS_KEY = 'planner_study_hub_known_users_v1';
 const LOCAL_PASSWORDS_KEY = 'planner_study_hub_local_pw_v1';
+const LOCAL_SHARED_JOBS_KEY = 'planner_study_hub_shared_jobs_v1';
 const IDB_NAME = 'PlannerStudyHubDB';
 const IDB_VERSION = 1;
 const IDB_STORE = 'tablet_files';
@@ -608,5 +613,194 @@ export const storageService = {
     const normalized = normalizePlannerState(stateToRestore);
     await this.saveState(normalized);
     return normalized;
+  },
+
+  /**
+   * Pesquisa usuários cadastrados no Planner Hub pelo username ou nome de exibição.
+   */
+  async searchUsers(
+    query = '',
+    user?: UserAccount | null
+  ): Promise<PublicUserSummary[]> {
+    const activeUser = user ?? this.getActiveUser();
+    if (!activeUser) return [];
+
+    if (supabase && activeUser.sessionToken) {
+      const { data, error } = await supabase.rpc('planner_search_users', {
+        p_username: activeUser.username,
+        p_session_token: activeUser.sessionToken,
+        p_query: query,
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao buscar usuários.');
+      }
+
+      return Array.isArray(data) ? (data as PublicUserSummary[]) : [];
+    }
+
+    const rawKnown = localStorage.getItem(KNOWN_USERS_KEY);
+    const list: UserAccount[] = rawKnown ? JSON.parse(rawKnown) : [];
+    const q = query.trim().toLowerCase();
+    return list
+      .filter(
+        (u) =>
+          u.username !== activeUser.username &&
+          (!q ||
+            u.username.toLowerCase().includes(q) ||
+            u.displayName.toLowerCase().includes(q))
+      )
+      .map((u) => ({ username: u.username, displayName: u.displayName }));
+  },
+
+  /**
+   * Compartilha uma vaga com outro usuário enviando EXCLUSIVAMENTE os campos públicos da oportunidade.
+   * Nenhum dado privado (status, notas pessoais, devolutivas, histórico ou data de inscrição) é enviado.
+   */
+  async shareJobWithUser(
+    recipientUsername: string,
+    job: JobOpportunity | SharedJobPayload,
+    message?: string,
+    user?: UserAccount | null
+  ): Promise<SharedJobItem> {
+    const activeUser = user ?? this.getActiveUser();
+    if (!activeUser) {
+      throw new Error('Faça login para compartilhar vagas.');
+    }
+
+    const cleanRecipient = recipientUsername.trim().toLowerCase();
+    if (!cleanRecipient) {
+      throw new Error('Selecione um usuário destinatário.');
+    }
+    if (cleanRecipient === activeUser.username) {
+      throw new Error('Você não pode compartilhar uma vaga consigo mesmo.');
+    }
+
+    const sanitizedPayload: SharedJobPayload = {
+      company: job.company.trim(),
+      title: job.title.trim(),
+      link: job.link?.trim() || undefined,
+      description: job.description?.trim() || undefined,
+      area: job.area?.trim() || undefined,
+      workMode: job.workMode || 'remoto',
+      location: job.location?.trim() || undefined,
+      opportunityType: job.opportunityType || 'estagio',
+    };
+
+    if (supabase && activeUser.sessionToken) {
+      const { data, error } = await supabase.rpc('planner_share_job', {
+        p_username: activeUser.username,
+        p_session_token: activeUser.sessionToken,
+        p_recipient_username: cleanRecipient,
+        p_job_payload: sanitizedPayload,
+        p_message: message?.trim() || null,
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Não foi possível compartilhar a vaga.');
+      }
+
+      return data as SharedJobItem;
+    }
+
+    const localShares: SharedJobItem[] = JSON.parse(
+      localStorage.getItem(LOCAL_SHARED_JOBS_KEY) || '[]'
+    );
+    const newItem: SharedJobItem = {
+      id: `share-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      senderUsername: activeUser.username,
+      senderDisplayName: activeUser.displayName,
+      recipientUsername: cleanRecipient,
+      jobPayload: sanitizedPayload,
+      message: message?.trim() || undefined,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+    localStorage.setItem(
+      LOCAL_SHARED_JOBS_KEY,
+      JSON.stringify([newItem, ...localShares])
+    );
+    return newItem;
+  },
+
+  /**
+   * Lista todas as vagas compartilhadas recebidas e enviadas pelo usuário autenticado.
+   */
+  async listSharedJobs(user?: UserAccount | null): Promise<{
+    received: SharedJobItem[];
+    sent: SharedJobItem[];
+  }> {
+    const activeUser = user ?? this.getActiveUser();
+    if (!activeUser) {
+      return { received: [], sent: [] };
+    }
+
+    if (supabase && activeUser.sessionToken) {
+      try {
+        const { data, error } = await supabase.rpc('planner_list_shared_jobs', {
+          p_username: activeUser.username,
+          p_session_token: activeUser.sessionToken,
+        });
+
+        if (!error && data) {
+          const parsed = data as {
+            received?: SharedJobItem[];
+            sent?: SharedJobItem[];
+          };
+          return {
+            received: Array.isArray(parsed.received) ? parsed.received : [],
+            sent: Array.isArray(parsed.sent) ? parsed.sent : [],
+          };
+        }
+      } catch (err) {
+        console.warn('Falha ao buscar vagas compartilhadas no Supabase:', err);
+      }
+    }
+
+    const localShares: SharedJobItem[] = JSON.parse(
+      localStorage.getItem(LOCAL_SHARED_JOBS_KEY) || '[]'
+    );
+    return {
+      received: localShares.filter(
+        (s) =>
+          s.recipientUsername === activeUser.username &&
+          s.status !== 'dismissed'
+      ),
+      sent: localShares.filter((s) => s.senderUsername === activeUser.username),
+    };
+  },
+
+  /**
+   * Atualiza o status de uma vaga compartilhada ('accepted' ou 'dismissed').
+   */
+  async respondToSharedJob(
+    shareId: string,
+    action: 'accepted' | 'dismissed',
+    user?: UserAccount | null
+  ): Promise<void> {
+    const activeUser = user ?? this.getActiveUser();
+    if (!activeUser) return;
+
+    if (supabase && activeUser.sessionToken) {
+      const { error } = await supabase.rpc('planner_respond_shared_job', {
+        p_username: activeUser.username,
+        p_session_token: activeUser.sessionToken,
+        p_share_id: shareId,
+        p_action: action,
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao atualizar vaga compartilhada.');
+      }
+      return;
+    }
+
+    const localShares: SharedJobItem[] = JSON.parse(
+      localStorage.getItem(LOCAL_SHARED_JOBS_KEY) || '[]'
+    );
+    const updated = localShares.map((s) =>
+      s.id === shareId ? { ...s, status: action } : s
+    );
+    localStorage.setItem(LOCAL_SHARED_JOBS_KEY, JSON.stringify(updated));
   },
 };

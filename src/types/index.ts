@@ -1,4 +1,9 @@
-export type NavigationTab = 'dashboard' | 'calendar' | 'college' | 'concurso';
+export type NavigationTab =
+  | 'dashboard'
+  | 'calendar'
+  | 'college'
+  | 'concurso'
+  | 'vagas';
 
 export type AppTheme =
   | 'rose'
@@ -121,11 +126,96 @@ export interface ExamPlan {
   subjects: ExamSubject[];
 }
 
+export type JobWorkMode = 'remoto' | 'hibrido' | 'presencial';
+
+export type JobOpportunityType =
+  | 'estagio'
+  | 'efetivo'
+  | 'trainee'
+  | 'freelance'
+  | 'bolsa';
+
+export type JobApplicationStatus =
+  | 'interessado'
+  | 'inscrito'
+  | 'em_analise'
+  | 'teste_tecnico'
+  | 'entrevista'
+  | 'aprovado'
+  | 'reprovado'
+  | 'desistencia';
+
+export interface JobHistoryEntry {
+  id: string;
+  date: string; // ISO string ou YYYY-MM-DD HH:mm
+  status: JobApplicationStatus;
+  note: string;
+}
+
+export interface JobOpportunity {
+  id: string;
+  // Informações principais da oportunidade (podem ser compartilhadas)
+  company: string;
+  title: string;
+  link?: string;
+  description?: string;
+  area?: string;
+  workMode: JobWorkMode;
+  location?: string;
+  opportunityType: JobOpportunityType;
+
+  // Acompanhamento privado da candidatura (NUNCA compartilhado)
+  appliedDate?: string; // YYYY-MM-DD
+  status: JobApplicationStatus;
+  companyFeedback?: string;
+  nextStep?: string;
+  nextStepDate?: string; // YYYY-MM-DD
+  personalNotes?: string;
+  history: JobHistoryEntry[];
+
+  // Metadados
+  sharedBy?: {
+    username: string;
+    displayName: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SharedJobPayload {
+  company: string;
+  title: string;
+  link?: string;
+  description?: string;
+  area?: string;
+  workMode: JobWorkMode;
+  location?: string;
+  opportunityType: JobOpportunityType;
+}
+
+export interface SharedJobItem {
+  id: string;
+  senderUsername: string;
+  senderDisplayName: string;
+  recipientUsername: string;
+  recipientDisplayName?: string;
+  jobPayload: SharedJobPayload;
+  message?: string;
+  status: 'pending' | 'accepted' | 'dismissed';
+  createdAt: string;
+}
+
+export interface PublicUserSummary {
+  username: string;
+  displayName: string;
+}
+
 export interface PlannerDataState {
   events: CalendarEvent[];
   fixedClasses: FixedClassSlot[];
   collegeSubjects: CollegeSubject[];
   exams: ExamPlan[];
+  jobs?: JobOpportunity[];
   theme?: AppTheme;
   // Campos legados mantidos para compatibilidade de migração automática
   examSubjects?: ExamSubject[];
@@ -143,5 +233,5 @@ export interface HighlightCountdownItem {
   daysRemaining: number;
   badgeType: 'entrevista' | 'prova' | 'trabalho' | 'aniversario' | 'concurso' | 'urgente';
   subtitle: string;
-  source: 'agenda' | 'faculdade';
+  source: 'agenda' | 'faculdade' | 'vagas';
 }

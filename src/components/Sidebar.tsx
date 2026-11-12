@@ -4,6 +4,7 @@ import {
   CalendarDays,
   GraduationCap,
   Award,
+  Briefcase,
   Sparkles,
   Cloud,
   HardDrive,
@@ -24,7 +25,12 @@ export const Sidebar: React.FC = () => {
     theme,
     setTheme,
     logout,
+    sharedJobsReceived = [],
   } = usePlannerStore();
+
+  const pendingSharedJobsCount = sharedJobsReceived.filter(
+    (s) => s.status === 'pending'
+  ).length;
 
   const navItems: {
     id: NavigationTab;
@@ -32,6 +38,7 @@ export const Sidebar: React.FC = () => {
     icon: React.FC<{ className?: string }>;
     accentColor: string;
     activeClass: string;
+    badgeCount?: number;
   }[] = [
     {
       id: 'dashboard',
@@ -60,6 +67,14 @@ export const Sidebar: React.FC = () => {
       icon: Award,
       accentColor: 'text-emerald-300',
       activeClass: 'border-l-4 border-l-emerald-400 bg-emerald-500/15 text-[#F5F2F8]',
+    },
+    {
+      id: 'vagas',
+      label: 'Vagas & Carreira',
+      icon: Briefcase,
+      accentColor: 'text-sky-300',
+      activeClass: 'border-l-4 border-l-sky-400 bg-sky-500/15 text-[#F5F2F8]',
+      badgeCount: pendingSharedJobsCount,
     },
   ];
 
@@ -114,14 +129,21 @@ export const Sidebar: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
+                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 rounded-xl text-sm font-medium transition-all ${
                   isActive
                     ? item.activeClass
                     : 'text-[#A89FBD] hover:bg-[#292336] hover:text-[#F5F2F8]'
                 }`}
               >
-                <Icon className={`w-4 h-4 ${isActive ? item.accentColor : ''}`} />
-                <span>{item.label}</span>
+                <div className="flex items-center gap-3">
+                  <Icon className={`w-4 h-4 ${isActive ? item.accentColor : ''}`} />
+                  <span>{item.label}</span>
+                </div>
+                {item.badgeCount !== undefined && item.badgeCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500 text-white">
+                    {item.badgeCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -222,7 +244,7 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
 
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#211C2B]/95 backdrop-blur-md border-t border-[#322B40] px-2 py-1.5 grid grid-cols-4 gap-1">
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-[#211C2B]/95 backdrop-blur-md border-t border-[#322B40] px-1.5 py-1.5 grid grid-cols-5 gap-1">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
@@ -230,7 +252,7 @@ export const Sidebar: React.FC = () => {
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl transition ${
+              className={`relative flex flex-col items-center justify-center py-2 px-1 rounded-xl transition ${
                 isActive ? `bg-white/5 ${item.accentColor}` : 'text-[#A89FBD]'
               }`}
             >
@@ -238,6 +260,11 @@ export const Sidebar: React.FC = () => {
               <span className="text-[10px] font-medium truncate">
                 {item.label.split(' ')[0]}
               </span>
+              {item.badgeCount !== undefined && item.badgeCount > 0 && (
+                <span className="absolute top-1 right-2 w-4 h-4 rounded-full text-[9px] font-extrabold bg-rose-500 text-white flex items-center justify-center">
+                  {item.badgeCount}
+                </span>
+              )}
             </button>
           );
         })}

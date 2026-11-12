@@ -6,8 +6,11 @@ import {
   ExamPlan,
   ExamSubject,
   FixedClassSlot,
+  JobApplicationStatus,
+  JobOpportunity,
   NavigationTab,
   PlannerDataState,
+  SharedJobItem,
   TabletNoteAttachment,
   UnitAssessment,
   UserAccount,
@@ -138,11 +141,49 @@ interface PlannerStore extends PlannerDataState {
     storageKey: string
   ) => Promise<void>;
 
+  // Controle de Vagas & Compartilhamento
+  jobs: JobOpportunity[];
+  sharedJobsReceived: SharedJobItem[];
+  sharedJobsSent: SharedJobItem[];
+  addJobOpportunity: (
+    jobData: Omit<JobOpportunity, 'id' | 'history' | 'createdAt' | 'updatedAt'>
+  ) => Promise<string>;
+  updateJobOpportunity: (
+    jobId: string,
+    updates: Partial<Omit<JobOpportunity, 'id' | 'createdAt'>>
+  ) => Promise<void>;
+  updateJobStatus: (
+    jobId: string,
+    newStatus: JobApplicationStatus,
+    customNote?: string
+  ) => Promise<void>;
+  addJobHistoryNote: (jobId: string, note: string) => Promise<void>;
+  deleteJobOpportunity: (jobId: string) => Promise<void>;
+  refreshSharedJobs: () => Promise<void>;
+  shareJob: (
+    recipientUsername: string,
+    job: JobOpportunity,
+    message?: string
+  ) => Promise<void>;
+  acceptSharedJob: (sharedItem: SharedJobItem) => Promise<string>;
+  dismissSharedJob: (shareId: string) => Promise<void>;
+
   // Backup & Restore
   exportBackup: () => Promise<void>;
   importBackup: (file: File) => Promise<void>;
   resetToDemoData: () => Promise<void>;
 }
+
+const JOB_STATUS_LABELS: Record<JobApplicationStatus, string> = {
+  interessado: 'Interessado',
+  inscrito: 'Inscrição Realizada',
+  em_analise: 'Em Análise',
+  teste_tecnico: 'Teste Técnico',
+  entrevista: 'Entrevista',
+  aprovado: 'Aprovado',
+  reprovado: 'Reprovado',
+  desistencia: 'Desistência',
+};
 
 function extractDataState(store: PlannerStore): PlannerDataState {
   return {
@@ -150,6 +191,7 @@ function extractDataState(store: PlannerStore): PlannerDataState {
     fixedClasses: store.fixedClasses,
     collegeSubjects: store.collegeSubjects,
     exams: store.exams,
+    jobs: store.jobs || [],
     theme: store.theme,
     quickNotes: store.quickNotes,
     quickNotesUpdatedAt: store.quickNotesUpdatedAt,
@@ -176,6 +218,9 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
 
   return {
     ...initial,
+    jobs: initial.jobs || [],
+    sharedJobsReceived: [],
+    sharedJobsSent: [],
     currentUser: savedUser,
     theme: initialTheme,
     activeTab: 'dashboard',
@@ -190,11 +235,17 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
         return;
       }
       set({ isLoading: true, currentUser: user });
-      const loaded = await storageService.loadState(user);
+      const [loaded, shared] = await Promise.all([
+        storageService.loadState(user),
+        storageService.listSharedJobs(user),
+      ]);
       const resolvedTheme: AppTheme = loaded.theme || user.theme || 'rose';
       applyThemeToDOM(resolvedTheme);
       set({
         ...loaded,
+        jobs: loaded.jobs || [],
+        sharedJobsReceived: shared.received,
+        sharedJobsSent: shared.sent,
         currentUser: { ...user, theme: resolvedTheme },
         theme: resolvedTheme,
         isLoading: false,
@@ -206,11 +257,17 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
       set({ isLoading: true });
       try {
         const account = await storageService.loginUser(username, password);
-        const loaded = await storageService.loadState(account);
+        const [loaded, shared] = await Promise.all([
+          storageService.loadState(account),
+          storageService.listSharedJobs(account),
+        ]);
         const resolvedTheme: AppTheme = loaded.theme || account.theme || 'rose';
         applyThemeToDOM(resolvedTheme);
         set({
           ...loaded,
+          jobs: loaded.jobs || [],
+          sharedJobsReceived: shared.received,
+          sharedJobsSent: shared.sent,
           currentUser: { ...account, theme: resolvedTheme },
           theme: resolvedTheme,
           activeTab: 'dashboard',
@@ -232,10 +289,16 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
           password,
           theme
         );
-        const loaded = await storageService.loadState(account);
+        const [loaded, shared] = await Promise.all([
+          storageService.loadState(account),
+          storageService.listSharedJobs(account),
+        ]);
         applyThemeToDOM(theme);
         set({
           ...loaded,
+          jobs: loaded.jobs || [],
+          sharedJobsReceived: shared.received,
+          sharedJobsSent: shared.sent,
           currentUser: account,
           theme,
           activeTab: 'dashboard',
@@ -252,6 +315,8 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
       storageService.logoutUser();
       set({
         currentUser: null,
+        sharedJobsReceived: [],
+        sharedJobsSent: [],
         activeTab: 'dashboard',
       });
     },
@@ -698,6 +763,217 @@ export const usePlannerStore = create<PlannerStore>((set, get) => {
     exportBackup: async () => {
       const data = extractDataState(get());
       await storageService.exportBackupJson(data);
+    },
+
+    // Controle de Vagas & Compartilhamento
+    addJobOpportunity: async (jobData) => {
+      const nowIso = new Date().toISOString();
+      const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const statusLabel = JOB_STATUS_LABELS[jobData.status] || jobData.status;
+      const newJob: JobOpportunity = {
+        ...jobData,
+        id,
+        history: [
+          {
+            id: `hist-${Date.now()}`,
+            date: nowIso,
+            status: jobData.status,
+            note: `Vaga cadastrada (${statusLabel})`,
+          },
+        ],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+      set((state) => ({ jobs: [newJob, ...(state.jobs || [])] }));
+      await persistCurrentState();
+      return id;
+    },
+
+    updateJobOpportunity: async (jobId, updates) => {
+      const nowIso = new Date().toISOString();
+      set((state) => ({
+        jobs: (state.jobs || []).map((job) => {
+          if (job.id !== jobId) return job;
+          const nextHistory = [...(job.history || [])];
+          if (updates.status && updates.status !== job.status) {
+            const oldLabel = JOB_STATUS_LABELS[job.status] || job.status;
+            const newLabel = JOB_STATUS_LABELS[updates.status] || updates.status;
+            nextHistory.unshift({
+              id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+              date: nowIso,
+              status: updates.status,
+              note: `Status alterado de "${oldLabel}" para "${newLabel}"`,
+            });
+          }
+          if (
+            updates.companyFeedback &&
+            updates.companyFeedback !== job.companyFeedback
+          ) {
+            nextHistory.unshift({
+              id: `hist-fb-${Date.now()}`,
+              date: nowIso,
+              status: updates.status || job.status,
+              note: `Devolutiva registrada: ${updates.companyFeedback}`,
+            });
+          }
+          return {
+            ...job,
+            ...updates,
+            history: updates.history || nextHistory,
+            updatedAt: nowIso,
+          };
+        }),
+      }));
+      await persistCurrentState();
+    },
+
+    updateJobStatus: async (jobId, newStatus, customNote) => {
+      const nowIso = new Date().toISOString();
+      set((state) => ({
+        jobs: (state.jobs || []).map((job) => {
+          if (job.id !== jobId) return job;
+          if (job.status === newStatus && !customNote) return job;
+          const oldLabel = JOB_STATUS_LABELS[job.status] || job.status;
+          const newLabel = JOB_STATUS_LABELS[newStatus] || newStatus;
+          const appliedDate =
+            !job.appliedDate && newStatus !== 'interessado'
+              ? nowIso.slice(0, 10)
+              : job.appliedDate;
+          return {
+            ...job,
+            status: newStatus,
+            appliedDate,
+            updatedAt: nowIso,
+            history: [
+              {
+                id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                date: nowIso,
+                status: newStatus,
+                note:
+                  customNote ||
+                  `Status alterado de "${oldLabel}" para "${newLabel}"`,
+              },
+              ...(job.history || []),
+            ],
+          };
+        }),
+      }));
+      await persistCurrentState();
+    },
+
+    addJobHistoryNote: async (jobId, note) => {
+      if (!note.trim()) return;
+      const nowIso = new Date().toISOString();
+      set((state) => ({
+        jobs: (state.jobs || []).map((job) => {
+          if (job.id !== jobId) return job;
+          return {
+            ...job,
+            updatedAt: nowIso,
+            history: [
+              {
+                id: `hist-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+                date: nowIso,
+                status: job.status,
+                note: note.trim(),
+              },
+              ...(job.history || []),
+            ],
+          };
+        }),
+      }));
+      await persistCurrentState();
+    },
+
+    deleteJobOpportunity: async (jobId) => {
+      set((state) => ({
+        jobs: (state.jobs || []).filter((j) => j.id !== jobId),
+      }));
+      await persistCurrentState();
+    },
+
+    refreshSharedJobs: async () => {
+      const user = get().currentUser;
+      if (!user) return;
+      const shared = await storageService.listSharedJobs(user);
+      set({
+        sharedJobsReceived: shared.received,
+        sharedJobsSent: shared.sent,
+      });
+    },
+
+    shareJob: async (recipientUsername, job, message) => {
+      const user = get().currentUser;
+      const created = await storageService.shareJobWithUser(
+        recipientUsername,
+        job,
+        message,
+        user
+      );
+      set((state) => ({
+        sharedJobsSent: [created, ...state.sharedJobsSent],
+      }));
+    },
+
+    acceptSharedJob: async (sharedItem) => {
+      const user = get().currentUser;
+      const nowIso = new Date().toISOString();
+      const id = `job-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const p = sharedItem.jobPayload;
+
+      // Cria um registro 100% independente na lista do destinatário, sem qualquer vínculo com dados pessoais do remetente
+      const independentJob: JobOpportunity = {
+        id,
+        company: p.company || 'Empresa',
+        title: p.title || 'Oportunidade',
+        link: p.link || undefined,
+        description: p.description || undefined,
+        area: p.area || undefined,
+        workMode: p.workMode || 'remoto',
+        location: p.location || undefined,
+        opportunityType: p.opportunityType || 'estagio',
+        status: 'interessado',
+        sharedBy: {
+          username: sharedItem.senderUsername,
+          displayName: sharedItem.senderDisplayName,
+        },
+        history: [
+          {
+            id: `hist-${Date.now()}`,
+            date: nowIso,
+            status: 'interessado',
+            note: `Oportunidade recebida de ${sharedItem.senderDisplayName} (@${sharedItem.senderUsername}) e adicionada à sua lista`,
+          },
+        ],
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await storageService.respondToSharedJob(
+        sharedItem.id,
+        'accepted',
+        user
+      );
+
+      set((state) => ({
+        jobs: [independentJob, ...(state.jobs || [])],
+        sharedJobsReceived: state.sharedJobsReceived.map((item) =>
+          item.id === sharedItem.id ? { ...item, status: 'accepted' } : item
+        ),
+      }));
+
+      await persistCurrentState();
+      return id;
+    },
+
+    dismissSharedJob: async (shareId) => {
+      const user = get().currentUser;
+      await storageService.respondToSharedJob(shareId, 'dismissed', user);
+      set((state) => ({
+        sharedJobsReceived: state.sharedJobsReceived.filter(
+          (item) => item.id !== shareId
+        ),
+      }));
     },
 
     importBackup: async (file) => {

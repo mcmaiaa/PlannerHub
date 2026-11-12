@@ -40,6 +40,7 @@ export const DashboardView: React.FC = () => {
     fixedClasses = [],
     collegeSubjects = [],
     exams = [],
+    jobs = [],
     quickNotes = '',
     quickNotesUpdatedAt = '',
     updateQuickNotes,
@@ -118,13 +119,34 @@ export const DashboardView: React.FC = () => {
       }
     }
 
+    for (const job of jobs) {
+      if (
+        !job.nextStepDate ||
+        ['reprovado', 'desistencia'].includes(job.status)
+      ) {
+        continue;
+      }
+      const diff = getDaysDifference(todayIso, job.nextStepDate);
+      if (diff < 0 || diff > 180) continue;
+
+      list.push({
+        id: `job-step-${job.id}`,
+        title: `${job.company}: ${job.nextStep || job.title}`,
+        date: job.nextStepDate,
+        daysRemaining: diff,
+        badgeType: 'entrevista',
+        subtitle: `Vaga: ${job.title}`,
+        source: 'vagas',
+      });
+    }
+
     return list.sort((a, b) => {
       if (a.daysRemaining !== b.daysRemaining) {
         return a.daysRemaining - b.daysRemaining;
       }
       return (a.startTime || '23:59').localeCompare(b.startTime || '23:59');
     });
-  }, [events, collegeSubjects, todayIso]);
+  }, [events, collegeSubjects, jobs, todayIso]);
 
   const totalHighlightPages = Math.max(
     1,
@@ -292,6 +314,28 @@ export const DashboardView: React.FC = () => {
               {examProgressPercent}% concluído
             </div>
           </button>
+
+          <button
+            onClick={() => setActiveTab('vagas')}
+            className="px-4 py-2.5 rounded-xl border-l-4 border-l-sky-400 bg-sky-500/15 border border-sky-400/25 hover:bg-sky-500/25 transition text-left"
+          >
+            <div className="text-[11px] text-[#A89FBD]">
+              Vagas & Carreira ({jobs.length})
+            </div>
+            <div className="text-sm font-bold text-sky-300">
+              {
+                jobs.filter((j) =>
+                  [
+                    'inscrito',
+                    'em_analise',
+                    'teste_tecnico',
+                    'entrevista',
+                  ].includes(j.status)
+                ).length
+              }{' '}
+              em andamento
+            </div>
+          </button>
         </div>
       </div>
 
@@ -379,7 +423,13 @@ export const DashboardView: React.FC = () => {
                 <div
                   key={item.id}
                   onClick={() =>
-                    setActiveTab(item.source === 'faculdade' ? 'college' : 'calendar')
+                    setActiveTab(
+                      item.source === 'faculdade'
+                        ? 'college'
+                        : item.source === 'vagas'
+                        ? 'vagas'
+                        : 'calendar'
+                    )
                   }
                   className={`cursor-pointer rounded-2xl p-5 transition-all duration-150 shadow-md hover:-translate-y-0.5 flex flex-col justify-between gap-3 ${style.cardClass}`}
                 >

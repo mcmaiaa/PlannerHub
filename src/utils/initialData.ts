@@ -782,6 +782,7 @@ export function getInitialPlannerData(): PlannerDataState {
 
   return {
     exams: realExams,
+    jobs: [],
     examTargetName: realExams[0].name,
     examSubjects: realExams[0].subjects,
     lastSyncedAt: new Date().toISOString(),
@@ -800,6 +801,7 @@ export function getInitialPlannerData(): PlannerDataState {
 export function getBlankPlannerData(): PlannerDataState {
   return {
     exams: [],
+    jobs: [],
     events: [],
     fixedClasses: [],
     collegeSubjects: [],
@@ -831,6 +833,7 @@ export function normalizePlannerState(
         ? raw.collegeSubjects
         : [],
       exams: Array.isArray(raw.exams) ? raw.exams : [],
+      jobs: Array.isArray(raw.jobs) ? raw.jobs : [],
       quickNotes: raw.quickNotes ?? '',
       quickNotesUpdatedAt: raw.quickNotesUpdatedAt ?? '',
       lastSyncedAt: raw.lastSyncedAt ?? new Date().toISOString(),
@@ -838,7 +841,10 @@ export function normalizePlannerState(
     };
   }
 
-  let updated = { ...raw };
+  let updated = {
+    ...raw,
+    jobs: Array.isArray(raw.jobs) ? raw.jobs : [],
+  };
 
   // 1. Atualiza para os 2 Concursos reais (TJPB IA + DPE-PB D04) se ainda estiver com os exemplos antigos
   const hasRealConcursos =
